@@ -1,5 +1,6 @@
 #include <iostream>
 #include <unistd.h>
+#include <vector>
 #include "CAENVMElib.h"
 #include "CAENVMEtypes.h"
 
@@ -10,7 +11,7 @@ using namespace std;
 #define gREADS        10000
 #define gDAC          100
 #define gBOARD_VME    0x800D0000
-
+#define gBOARDS       8
 
 #define CBV1724_BoardInfoReg              0x8140
 #define CBV1724_BltEvNumReg               0xEF1C
@@ -98,16 +99,24 @@ int LoopDAC(int handle){
 int main(){
   
   cout<<"Starting program"<<endl;
-
+  
  
   for( int loop_counter=0; loop_counter<gLOOPS; loop_counter++){
     
     cout<<"Entering loop "<<loop_counter<<endl;
-
-    // Initialize the board
-    int handle = -1, cerror=-1;;
-    if((cerror=CAENVME_Init(cvV2718,0,0,&handle)) != cvSuccess){
-      cout<<"Failed to initialize board with error "<<cerror<<endl;
+    vector<int> handles;
+    
+    // Initialize the boards
+    for(unsigned int board=0; board<gBOARDS; board++){
+      int handle = -1, cerror=-1;;
+      if((cerror=CAENVME_Init(cvV2718,0,board,&handle)) != cvSuccess){
+	cout<<"Failed to initialize board with error "<<cerror<<endl;
+	return -1;
+      }
+      handles.push_back(handle);
+    }
+    if(handles.size()==0) {
+      cout<<"No boards configured."<<endl;
       return -1;
     }
 
@@ -117,67 +126,78 @@ int main(){
       
       // For each cycle we will read and write a bunch of registers
       // Then we will self-trigger and read out some data.
-      int r = 0;
-      r+= WriteRegister(CBV1724_BoardResetReg, 0x1, handle); 
-      r+= WriteRegister(CBV1724_BltEvNumReg, 0x1, handle);
-      r+= WriteRegister(CBV1724_VMEControlReg, 0x10, handle);
-      r+= WriteRegister(CBV1724_ChannelMaskReg, 0xFF, handle);
-      r+= WriteRegister(CBV1724_ChannelConfReg,0x310, handle);
-      r+= WriteRegister(CBV1724_DPPReg,0x1310000, handle);
-      r+= WriteRegister(CBV1724_BuffOrg,0xA, handle);
-      r+= WriteRegister(CBV1724_CustomSize,0xC8, handle);
-      r+= WriteRegister(CBV1724_FrontPanelIOReg, 0x840, handle);      
-      r+= WriteRegister(CBV1724_AcquisitionControlReg,0x0, handle);
-      r+= WriteRegister(CBV1724_TriggerSourceReg,0x80000000, handle);
-      if(r!=0)
-	return -1;
+      
+      for(unsigned int board=0; board<handles.size(); board++){
+	int handle = handles[board];
+	int r = 0;
+	r+= WriteRegister(CBV1724_BoardResetReg, 0x1, handle); 
+	r+= WriteRegister(CBV1724_BltEvNumReg, 0x1, handle);
+	r+= WriteRegister(CBV1724_VMEControlReg, 0x10, handle);
+	r+= WriteRegister(CBV1724_ChannelMaskReg, 0xFF, handle);
+	r+= WriteRegister(CBV1724_ChannelConfReg,0x310, handle);
+	r+= WriteRegister(CBV1724_DPPReg,0x1310000, handle);
+	r+= WriteRegister(CBV1724_BuffOrg,0xA, handle);
+	r+= WriteRegister(CBV1724_CustomSize,0xC8, handle);
+	r+= WriteRegister(CBV1724_FrontPanelIOReg, 0x840, handle);      
+	r+= WriteRegister(CBV1724_AcquisitionControlReg,0x0, handle);
+	r+= WriteRegister(CBV1724_TriggerSourceReg,0x80000000, handle);
+	if(r!=0)
+	  return -1;
 
-      // Do the DAC setting
-      cout<<"("<<loop_counter<<") Entering DAC loop"<<endl;
-      LoopDAC(handle);
-      cout<<"("<<loop_counter<<") Done with DAC loop"<<endl;
-
-      // Read the board
+	// Do the DAC setting
+	cout<<"("<<loop_counter<<") Entering DAC loop"<<endl;
+	LoopDAC(handle);
+	cout<<"("<<loop_counter<<") Done with DAC loop"<<endl;
+      }
+      
+      // Read the boards
       cout<<"("<<loop_counter<<") Entering read loop"<<endl;
       for( int read_counter=0; read_counter<gREADS; read_counter++){
 
-	// Software trigger
-	WriteRegister(CBV1724_AcquisitionControlReg, 0x4, handle);
-	WriteRegister(CBV1724_SoftwareTriggerReg, 0x1, handle);
-	WriteRegister(CBV1724_AcquisitionControlReg, 0x0, handle);
-
-	// Read board
-	unsigned int blt_bytes=0, buff_size=10000, blt_size=524288;
-	int nb=0,ret=-5;
-	u_int32_t *buff = new u_int32_t[buff_size]; //too large is OK
-	do{
-	  ret = CAENVME_FIFOBLTReadCycle(handle,gBOARD_VME,
-					 ((unsigned char*)buff)+blt_bytes,
-					 blt_size,cvA32_U_BLT,cvD32,&nb);
-	  if((ret!=cvSuccess) && (ret!=cvBusError)){
-	    cout<<"Board read error: "<<ret<<endl;
-	    delete[] buff;
-	    return -1;
-	  }
+	for(unsigned int board = 0; board<handles.size(); board++){
+	  
+	  int handle = handles[board];
+	  // Software trigger
+	  WriteRegister(CBV1724_AcquisitionControlReg, 0x4, handle);
+	  WriteRegister(CBV1724_SoftwareTriggerReg, 0x1, handle);
+	  WriteRegister(CBV1724_AcquisitionControlReg, 0x0, handle);
+	  
+	  // Read board
+	  unsigned int blt_bytes=0, buff_size=10000, blt_size=524288;
+	  int nb=0,ret=-5;
+	  u_int32_t *buff = new u_int32_t[buff_size]; //too large is OK
+	  do{
+	    ret = CAENVME_FIFOBLTReadCycle(handle,gBOARD_VME,
+					   ((unsigned char*)buff)+blt_bytes,
+					   blt_size,cvA32_U_BLT,cvD32,&nb);
+	    if((ret!=cvSuccess) && (ret!=cvBusError)){
+	      cout<<"Board read error: "<<ret<<endl;
+	      delete[] buff;
+	      return -1;
+	    }
 	  blt_bytes+=nb;
 	  if(blt_bytes>buff_size)   {
 	    cout<<"Buffer size too small for read!"<<endl;
 	    delete[] buff;
 	    return -1;
 	  }
-	}while(ret!=cvBusError);
-
-	delete[] buff;
-
+	  }while(ret!=cvBusError);
+	  
+	  delete[] buff;
+	}// end loop through boards
       } // end read loop
       cout<<"("<<loop_counter<<") Done with read loop"<<endl;
     } // end write register loop
     cout<<"("<<loop_counter<<") Done with register loop"<<endl;
 
-    // Close the board
-    if((cerror=CAENVME_End(handle)) != cvSuccess){
-      cout<<"Failed to close board with error "<<cerror<<endl;
-      return -1;
+    // Close the boards
+    for(unsigned int board = 0; board<handles.size(); board++){
+      int handle = handles[board];
+      int cerror=0;
+      if((cerror=CAENVME_End(handle)) != cvSuccess){
+	cout<<"Failed to close board with error "<<cerror<<endl;
+	return -1;
+      }
     }
   }
 
