@@ -1,0 +1,19 @@
+Crash Test Program
+Author: D. Coderre
+Date: 4.09.2015
+
+Brief: Try to reproduce crashes in CAENVMElib driver by 
+       looping common CAEN functions.
+
+Install: 
+
+	 - Install CAEN A2818 or A3818 HW and driver (see caen.it)
+	 - Install CAENVMElib (tested with 2.41)
+	 - Download this software. 
+	 - make
+
+Run:
+	- Adjust enums in main.cc as wanted
+	- make
+	- ./crash_test
+	- Recommend running in debugger
