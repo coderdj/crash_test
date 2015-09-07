@@ -57,6 +57,7 @@ int ReadRegister(u_int32_t reg, u_int32_t &val, int handle){
 int LoopDAC(int handle){
   // Set the DAC to some values over and over (simulate baseline fit procedure)
   for(int dac_loops=0; dac_loops<gDAC; dac_loops++){
+
     // Set between 0x1000 and 0x1500
     int dac_setting = 0x1000;
     if(dac_loops%2==0)
@@ -110,7 +111,7 @@ int main(){
     for(unsigned int board=0; board<gBOARDS; board++){
       int handle = -1, cerror=-1;;
       if((cerror=CAENVME_Init(cvV2718,0,board,&handle)) != cvSuccess){
-	cout<<"Failed to initialize board with error "<<cerror<<endl;
+	cout<<"Failed to initialize board "<<handle<<" with error "<<cerror<<endl;
 	return -1;
       }
       handles.push_back(handle);
@@ -141,12 +142,17 @@ int main(){
 	r+= WriteRegister(CBV1724_FrontPanelIOReg, 0x840, handle);      
 	r+= WriteRegister(CBV1724_AcquisitionControlReg,0x0, handle);
 	r+= WriteRegister(CBV1724_TriggerSourceReg,0x80000000, handle);
-	if(r!=0)
+	if(r!=0){
+	  cout<<"Crash in registers for board: "<<handle<<endl;
 	  return -1;
+	}
 
 	// Do the DAC setting
 	cout<<"("<<loop_counter<<") Entering DAC loop"<<endl;
-	LoopDAC(handle);
+	if(LoopDAC(handle)!=0){
+	  cout<<"Crash in DAC for board: "<<handle<<endl;
+	  return -1;
+	}
 	cout<<"("<<loop_counter<<") Done with DAC loop"<<endl;
       }
       
@@ -158,10 +164,16 @@ int main(){
 	  
 	  int handle = handles[board];
 	  // Software trigger
-	  WriteRegister(CBV1724_AcquisitionControlReg, 0x4, handle);
-	  WriteRegister(CBV1724_SoftwareTriggerReg, 0x1, handle);
-	  WriteRegister(CBV1724_AcquisitionControlReg, 0x0, handle);
-	  
+	  int r=0;
+	  r+= WriteRegister(CBV1724_AcquisitionControlReg, 0x4, handle);
+	  r+= WriteRegister(CBV1724_SoftwareTriggerReg, 0x1, handle);
+	  r+= WriteRegister(CBV1724_AcquisitionControlReg, 0x0, handle);
+	  r+= WriteRegister(CBV1724_AcquisitionControlReg, 0x0, handle);
+	  if(r!=0){
+	    cout<<"Crash in software triggering for board: "<<handle<<endl;
+	    return -1;
+	  }
+
 	  // Read board
 	  unsigned int blt_bytes=0, buff_size=10000, blt_size=524288;
 	  int nb=0,ret=-5;
@@ -171,7 +183,7 @@ int main(){
 					   ((unsigned char*)buff)+blt_bytes,
 					   blt_size,cvA32_U_BLT,cvD32,&nb);
 	    if((ret!=cvSuccess) && (ret!=cvBusError)){
-	      cout<<"Board read error: "<<ret<<endl;
+	      cout<<"Board read error: "<<ret<<" for board "<<handle<<endl;
 	      delete[] buff;
 	      return -1;
 	    }
@@ -195,7 +207,7 @@ int main(){
       int handle = handles[board];
       int cerror=0;
       if((cerror=CAENVME_End(handle)) != cvSuccess){
-	cout<<"Failed to close board with error "<<cerror<<endl;
+	cout<<"Failed to close board "<<handle<<" with error "<<cerror<<endl;
 	return -1;
       }
     }
